@@ -1,0 +1,68 @@
+# GitHub Actions workflow: deploy from any branch to the gh-pages branch automatically
+# - Triggers on push to any branch and on manual workflow_dispatch
+# - If a package.json exists it will run `npm ci && npm run build`
+# - Set PUBLISH_DIR (default ./) to the folder you want published (e.g., ./public or ./docs)
+# - Uses the built-in GITHUB_TOKEN to push to gh-pages (no extra secret required)
+name: Deploy to GitHub Pages
+
+on:
+  push:           # triggers on any branch push
+    branches:
+      - '**'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gh-pages-deploy-${{ github.repository }}
+  cancel-in-progress: true
+
+env:
+  # Change this to the folder that contains the final static site to publish.
+  # Examples:
+  # - If you build to "public" use ./public
+  # - If you want to publish repository root use ./
+  # - If you publish docs folder use ./docs
+  PUBLISH_DIR: ./
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout current branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js (if needed)
+        if: fileExists('package.json')
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install & build (if package.json exists)
+        if: fileExists('package.json')
+        run: |
+          npm ci
+          # expect a build script to produce files into $PUBLISH_DIR
+          if npm run | grep -q ' build'; then
+            npm run build
+          fi
+
+      - name: Show publish dir contents (debug)
+        run: |
+          echo "Publishing from: $PUBLISH_DIR"
+          ls -la "$PUBLISH_DIR" || true
+
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ${{ env.PUBLISH_DIR }}
+          # Use a single commit so the gh-pages branch stays clean:
+          single_commit: true
+          # Commit identity used by the action:
+          user_name: github-actions[bot]
+          user_email: github-actions[bot]@users.noreply.github.com
